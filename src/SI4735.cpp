@@ -1197,6 +1197,34 @@ void SI4735::setAvcAmMaxGain(uint8_t gain)
 }
 
 /**
+ * @ingroup group08 Automatic Volume Control
+ *
+ * @brief 一次性下发参考机型 MINI4732（1.1.8G）的出厂参数。
+ *
+ * @details 数值来源是该机型的配置导出文件（MINI4732-CFG-V3）里的默认值，
+ *          宏定义在 SI4735.h 顶部 REF_* 那一组。
+ *
+ *          FM：去加重 50 µs（fm_deemph=1，中国/欧洲制式）+ 搜台门限 5/10
+ *          AM/SSB：AVC 最大增益 50 dB（avcmaxgain=50）+ 搜台门限 3/10
+ *
+ *          注意：这些 property 只在对应调谐模式下有效，切模式后要重新调用一次。
+ *          Seek 门限只在「搜台」时起作用，不影响手动调谐。
+ */
+void SI4735::applyReferenceProfile()
+{
+    if (currentTune == FM_TUNE_FREQ || currentTune == NBFM_TUNE_FREQ)
+    {
+        setFMDeEmphasis(REF_FM_DEEMPH);
+        setFmSeekThresholds(REF_FM_SEEK_SNR, REF_FM_SEEK_RSSI);
+    }
+    else
+    {
+        setAvcAmMaxGain(REF_AVC_MAX_GAIN);
+        setAmSeekThresholds(REF_AM_SEEK_SNR, REF_AM_SEEK_RSSI);
+    }
+}
+
+/**
  * @ingroup group08 Received Signal Quality
  *
  * @brief Queries the status of the Received Signal Quality (RSQ) of the current channel.

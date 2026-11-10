@@ -206,6 +206,21 @@
 
 #define DEFAULT_CURRENT_AVC_AM_MAX_GAIN 36
 
+// ============================================================================
+// 参考机型 MINI4732（1.1.8G）的出厂参数
+//
+// 数据来源：该机型「配置导出」文件（#MINI4732-CFG-V3，47 个参数键）里的默认值，
+// 不是猜的。applyReferenceProfile() 会把下面这组值一次性下发给芯片。
+// 想改默认行为就改这里，不要散落在应用里。
+// ============================================================================
+#define REF_FM_SEEK_SNR 5       // fm_snr   —— FM 立体声/搜台 SNR 门限（dB）
+#define REF_FM_SEEK_RSSI 10     // fm_rssi  —— FM 搜台 RSSI 门限（dBµV）
+#define REF_AM_SEEK_SNR 3       // am_snr   —— AM 搜台 SNR 门限（dB）
+#define REF_AM_SEEK_RSSI 10     // am_rssi  —— AM 搜台 RSSI 门限（dBµV）
+#define REF_AVC_MAX_GAIN 50     // avcmaxgain —— AM 自动音量最大增益（dB，允许 12..90）
+#define REF_FM_DEEMPH 1         // fm_deemph  —— 1 = 50 µs（中国/欧洲），2 = 75 µs（美国）
+#define REF_TUNE_SPEED_MS 60    // tune_speed_time —— 长按加速调谐的判定时间（应用层用）
+
 #define XOSCEN_CRYSTAL 1 // Use crystal oscillator
 #define XOSCEN_RCLK 0    // Use external RCLK (crystal oscillator disabled).
 
@@ -1919,6 +1934,57 @@ public:
     {
         sendProperty(FM_DEEMPHASIS, parameter);
     };
+
+    /**
+     * @ingroup group08
+     * @brief 设置 FM Seek/Tune 的有效门限（SNR + RSSI）
+     *
+     * @details 芯片判定「这个频率是不是有效电台」用这两个值。官方库只暴露了 property 宏，
+     *          没有 API，应用里到处写 sendProperty 很难维护，这里补一层。
+     *          MINI4732 的出厂值是 SNR 5 dB / RSSI 10 dBµV（见 REF_FM_SEEK_*）。
+     *
+     * @see Si47XX PROGRAMMING GUIDE; AN332; FM_SEEK_TUNE_SNR_THRESHOLD (0x1403)
+     *
+     * @param snrDb    SNR 门限（dB，0 表示不启用）
+     * @param rssiDbuv RSSI 门限（dBµV）
+     */
+    inline void setFmSeekThresholds(uint8_t snrDb, uint8_t rssiDbuv)
+    {
+        sendProperty(FM_SEEK_TUNE_SNR_THRESHOLD, snrDb);
+        sendProperty(FM_SEEK_TUNE_RSSI_THRESHOLD, rssiDbuv);
+    };
+
+    /**
+     * @ingroup group08
+     * @brief 设置 AM/SSB Seek/Tune 的有效门限（SNR + RSSI）
+     *
+     * @details MINI4732 出厂值 SNR 3 dB / RSSI 10 dBµV（见 REF_AM_SEEK_*）。
+     *
+     * @see Si47XX PROGRAMMING GUIDE; AN332; AM_SEEK_SNR_THRESHOLD (0x3403)
+     *
+     * @param snrDb    SNR 门限（dB）
+     * @param rssiDbuv RSSI 门限（dBµV）
+     */
+    inline void setAmSeekThresholds(uint8_t snrDb, uint8_t rssiDbuv)
+    {
+        sendProperty(AM_SEEK_SNR_THRESHOLD, snrDb);
+        sendProperty(AM_SEEK_RSSI_THRESHOLD, rssiDbuv);
+    };
+
+    /**
+     * @ingroup group08
+     * @brief 一次性下发参考机型 MINI4732（1.1.8G）的出厂参数
+     *
+     * @details 按当前调谐模式分别生效：
+     *          - FM：去加重 50 µs + 搜台门限 5/10
+     *          - AM/SSB：AVC 最大增益 50 + 搜台门限 3/10
+     *
+     *          这些 property 只在对应模式下有效，所以切模式后要重新调一次。
+     *          本方法不改变任何既有 API 的默认值，不影响别的项目。
+     *
+     * @see REF_FM_SEEK_SNR 等宏的注释里有每个值的来源
+     */
+    void applyReferenceProfile();
 
     /**
      * @ingroup group08

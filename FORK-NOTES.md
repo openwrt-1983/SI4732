@@ -186,3 +186,64 @@ bool busTimedOut(void);   // 上一次总线访问是否超时/未被应答
 现在这些修复已经下沉到库本体，那份派生类仍可继续用，但两个都启用时以派生类为准（名字隐藏）。
 
 `extras/` 目录不参与 Arduino 编译，只作参考。
+
+---
+
+## 10. 新增：参考机型 MINI4732（1.1.8G）的驱动行为对齐
+
+上面第 1~9 条是**健壮性**修复，不改变正常路径的输出。这一节是另一种性质的改动：
+把参考机型 MINI4732（固件 1.1.8G）的出厂参数做进库里，让换库即得同样手感。
+
+数值不是猜的，来自该机型的「配置导出」文件（头标记 `#MINI4732-CFG-V3`，
+101 个键 = 47 参数 + 51 主题色）。
+
+### 10.1 `applyReferenceProfile()`
+
+```cpp
+void applyReferenceProfile();   // 按当前调谐模式下发一组 property
+```
+
+| 模式 | 下发内容 | 来源键 |
+|---|---|---|
+| FM | 去加重 50 µs + Seek 门限 SNR 5 / RSSI 10 | `fm_deemph=1` / `fm_snr=5` / `fm_rssi=10` |
+| AM / SSB | AVC 最大增益 50 dB + Seek 门限 SNR 3 / RSSI 10 | `avcmaxgain=50` / `am_snr=3` / `am_rssi=10` |
+
+宏都叫 `REF_*`，集中定义在 `SI4735.h` 顶部，改默认行为只改那一处。
+
+**这些 property 只在对应调谐模式下有效**，切模式后要重新调一次。只影响「搜台判定」，
+不影响手动调谐，所以对手动调台没有副作用。
+
+### 10.2 两个门限 API
+
+官方库只暴露了 property 宏（`FM_SEEK_TUNE_SNR_THRESHOLD` 等），应用里到处写
+`sendProperty` 不好维护，补了两层封装：
+
+```cpp
+void setFmSeekThresholds(uint8_t snrDb, uint8_t rssiDbuv);
+void setAmSeekThresholds(uint8_t snrDb, uint8_t rssiDbuv);
+```
+
+### 10.3 `SI4732Bands.h` —— 波段表
+
+参考机型有 21 个波段，**顺序**照抄实机（业余段插在 SWn 之间，不是排在最后）：
+
+```
+VHF / LW / MW / SW1 / 80M / SW2 / SW3 / 40M / SW4 / SW5 /
+SW6 / SW7 / 20M / SW8 / SW9 / 15M / SW10 / CB / 10M / ALL / AIR
+```
+
+结构体 `SI4732Band { name, minFreq, maxFreq, step, mode }`，频率统一 kHz
+（`uint32_t`，因为 VHF 108000 会溢出 `uint16_t`）。取用走 `si4732BandByIndex(i)`。
+
+> ⚠ **可信度分级**：顺序 = 实机照片，确定；起止频率和步进 = 按常规广播/业余划分推定，
+> 未逐项核对实机。要精确对齐就改这一张表，应用层不用动。
+>
+> ⚠ 第 21 项 `AIR`（118–137 MHz 航空段）参考机型有，但 SI4735/SI4732 的 FM 上限是 108 MHz，
+> **物理上收不到**。表里保留该项以便和实机菜单一致，应用层应当过滤掉它再调谐。
+
+### 10.4 没有做的
+
+- **SSB 28 kHz 栅格对齐**：芯片 SSB 的 LO 与 BFO 合成规则在应用层才能确定（取决于
+  用 `setSSB` 还是手动设 frequency + BFO），下沉到库会限制调用方式，暂不提供。
+- **调谐加速手感**（`tune_speed_time=60`）：纯应用层计时逻辑，库不掺和，只导出宏
+  `REF_TUNE_SPEED_MS` 供应用使用。
